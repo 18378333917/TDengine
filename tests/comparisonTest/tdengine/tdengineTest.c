@@ -191,6 +191,11 @@ void writeDataImp(void *param) {
     }
 
     fclose(fp);
+     if (remove(fileName) == 0){
+      printf("Deleted successfully");
+      }else{
+      printf("Unable to delete the file");
+      }
   }
 
   if (counter > 0) {

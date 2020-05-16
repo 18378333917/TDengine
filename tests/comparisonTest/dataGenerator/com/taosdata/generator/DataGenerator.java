@@ -6,6 +6,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.text.DecimalFormat;
 import java.util.Random;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class DataGenerator {
     /*
@@ -17,7 +21,7 @@ public class DataGenerator {
         int range;
         Random rand;
 
-        public ValueGen(int center, int range) {
+        public ValueGen(final int center, final int range) {
             this.center = center;
             this.range = range;
 
@@ -42,11 +46,11 @@ public class DataGenerator {
     private static int timestep = 1000; // sample time interval in milliseconds
 
     private static long dataStartTime = 1563249700000L;
-    private static int deviceId = 0;
+    private static AtomicInteger deviceId = new AtomicInteger(0);
     private static String tagPrefix = "dev_";
 
     // MachineNum RowsPerMachine MachinesInOneFile
-    public static void main(String args[]) {
+    public static void main(final String args[]) {
         int numOfDevice = 10000;
         int numOfFiles = 100;
         int rowsPerDevice = 10000;
@@ -86,38 +90,46 @@ public class DataGenerator {
         System.out.printf("----numOfDevice:%d\n", numOfDevice);
         System.out.printf("----rowsPerDevice:%d\n", rowsPerDevice);
 
-        int numOfDevPerFile = numOfDevice / numOfFiles;
-        long ts = dataStartTime;
+        final int numOfDevPerFile = numOfDevice / numOfFiles;
+        final long ts = dataStartTime;
 
         // deviceId, time stamp, humid(int), temp(double), tagString(dev_deviceid)
-        int humidityDistRadius = 35;
-        int tempDistRadius = 17;
-
+        final int humidityDistRadius = 35;
+        final int tempDistRadius = 17;
+        final ThreadPoolExecutor threadPoolExecutor =new ThreadPoolExecutor(4, 8, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>(10000));
         for (int i = 0; i < numOfFiles; ++i) { // prepare the data file
-            dataStartTime = ts;
-
-            // generate file name
-            String path = directory;
+            final String copyDir = directory;
+            final int copyRowsPerDevice = rowsPerDevice;
+            final int copynumOfDevPerFile = numOfDevPerFile;
+            final int copyhumidityDistRadius =humidityDistRadius;
+            final int copytempDistRadius =tempDistRadius;
+            final int copyI = i;
+            threadPoolExecutor.execute(new Runnable(){
+                 @Override
+                public void run() {
             try {
-                path += "/testdata" + String.valueOf(i) + ".csv";
-                getDataInOneFile(path, rowsPerDevice, numOfDevPerFile, humidityDistRadius, tempDistRadius);
+                 String path = copyDir;
+                path += "/testdata" + String.valueOf(copyI) + ".csv";
+                getDataInOneFile(path, copyRowsPerDevice, copynumOfDevPerFile, copyhumidityDistRadius, copytempDistRadius);
             } catch (IOException e) {
                 e.printStackTrace();
             }
+         }});
         }
+        threadPoolExecutor.shutdown();
     }
 
-    private static void getDataInOneFile(String path, int rowsPerDevice, int num, int humidityDistRadius, int tempDistRadius) throws IOException {
-        DecimalFormat df = new DecimalFormat("0.0000");
-        long startTime = dataStartTime;
+    private static void getDataInOneFile(final String path, final int rowsPerDevice, final int num, final int humidityDistRadius, final int tempDistRadius) throws IOException {
+        final DecimalFormat df = new DecimalFormat("0.0000");
+        final long startTime = dataStartTime;
 
-        FileWriter fw = new FileWriter(new File(path));
-        BufferedWriter bw = new BufferedWriter(fw);
+        final FileWriter fw = new FileWriter(new File(path));
+        final BufferedWriter bw = new BufferedWriter(fw);
 
         for (int i = 0; i < num; ++i) {
-            deviceId += 1;
+             int devid =deviceId.getAndAdd(1);
 
-            Random rand = new Random();
+            final Random rand = new Random();
             double centralVal = Math.abs(rand.nextInt(100));
             if (centralVal < humidityDistRadius) {
                 centralVal = humidityDistRadius;
@@ -127,19 +139,19 @@ public class DataGenerator {
                 centralVal = 100 - humidityDistRadius;
             }
 
-            DataGenerator.ValueGen humidityDataGen = new DataGenerator.ValueGen((int) centralVal, humidityDistRadius);
+            final DataGenerator.ValueGen humidityDataGen = new DataGenerator.ValueGen((int) centralVal, humidityDistRadius);
             dataStartTime = startTime;
 
             centralVal = Math.abs(rand.nextInt(22));
-            DataGenerator.ValueGen tempDataGen = new DataGenerator.ValueGen((int) centralVal, tempDistRadius);
+            final DataGenerator.ValueGen tempDataGen = new DataGenerator.ValueGen((int) centralVal, tempDistRadius);
 
             for (int j = 0; j < rowsPerDevice; ++j) {
-                int humidity = (int) humidityDataGen.next();
-                double temp = tempDataGen.next();
-                int deviceGroup = deviceId % 100;
+                final int humidity = (int) humidityDataGen.next();
+                final double temp = tempDataGen.next();
+                final int deviceGroup = devid % 100;
 
-                StringBuffer sb = new StringBuffer();
-                sb.append(deviceId).append(" ").append(tagPrefix).append(deviceId).append(" ").append(deviceGroup)
+                final StringBuffer sb = new StringBuffer();
+                sb.append(devid).append(" ").append(tagPrefix).append(devid).append(" ").append(deviceGroup)
                         .append(" ").append(dataStartTime).append(" ").append(humidity).append(" ")
                         .append(df.format(temp));
                 bw.write(sb.toString());
